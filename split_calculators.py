@@ -97,19 +97,20 @@ def distance_lap_calculator(run_records, lap_distance):
     last_lap_time = start_time
     prev_second = None
     derived_distance = 0
-    prev_derived = 0
     prev_change = 0
     state = 'straight'
     blend_weight = 0
     momentum = 0
+    blended_distance = 0
+    prev_blended = None
 
     for second in run_records:
         
         if second['speed_mps'] is not None:
-            prev_derived = derived_distance
             derived_distance += second['speed_mps']
+            blended_distance = derived_distance
         
-        if prev_second['position_lat'] is not None and prev_second['position_long'] is not None:
+        if prev_second is not None and prev_second['position_lat'] is not None and prev_second['position_long'] is not None:
             lat1 = prev_second['position_lat']
             long1 = prev_second['position_long']
             lat2 = second['position_lat']
@@ -119,161 +120,37 @@ def distance_lap_calculator(run_records, lap_distance):
                 gps_diff =  find_angle_diff(prev_change, gps_change)
                 state, momentum, blend_weight = state_machine(gps_diff, state, momentum, blend_weight)
             prev_change = gps_change
+            blended_distance = (second['distance_m'] * (1 - blend_weight) + derived_distance * blend_weight)
         
-        if state == 'straight':
-            straight_counter += 1       
-            if second['distance_m'] == next_lap:
+        if prev_blended is not None:
+            if blended_distance == next_lap:
                 lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
                 next_lap += lap_distance
                 last_lap_time = second['timestamp_unix']
-                prev_second = second
                 continue
-            elif second['distance_m'] > next_lap:
-                if prev_second is None:
-                    prev_second = second
+            elif blended_distance > next_lap:
+
+                if blended_distance != prev_blended:
+                    progress = (next_lap - prev_blended) / (blended_distance - prev_blended)
+                    prev_time = prev_second['timestamp_unix']
+                    current_time = second['timestamp_unix']
+                    lap_time = prev_time + progress * (current_time - prev_time)
+                    lap_split = lap_time - last_lap_time
+                    lap_splits.append(round(lap_split, 2))
+                    last_lap_time = lap_time
                     next_lap += lap_distance
                     continue
-                closing_speed = None
-                if prev_second['speed_mps'] is not None:
-                    closing_speed = prev_second['speed_mps']
-                if closing_speed:
-                    closing_distance = next_lap - prev_second['distance_m']
-                    closing_time = closing_distance / closing_speed
-                    lap_time = prev_second['timestamp_unix'] - last_lap_time
-                    final_time = closing_time + lap_time
-                    lap_splits.append(round(final_time, 2))
-                    last_lap_time = prev_second['timestamp_unix'] + closing_time
-                else:
-                    lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
-                    last_lap_time = second['timestamp_unix']
-                next_lap += lap_distance
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-            else:
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
+
+        prev_second = second
+        prev_blended = blended_distance
+
     if last_lap_time < end_time:
         remainder = end_time - last_lap_time
         lap_splits.append(round(remainder, 2))
-    distance = run_records[-1]['distance_m']
-    print(lap_splits)
-    print(distance)
+    distance = blended_distance
+    print(f'Distance Splits: {lap_splits}')
+    print(f'total distance: {distance}')
 
-    return lap_splits
-
-def distance_lap_calculator(run_records, lap_distance):
-    lap_splits = []
-    start_time = run_records[0]['timestamp_unix']
-    end_time = run_records[-1]['timestamp_unix']
-    curve_threshold = 0.02
-    next_lap = lap_distance
-    last_lap_time = start_time
-    prev_second = None
-    derived_distance = 0
-    prev_derived = 0
-    prev_gps_change = 0
-    gps_change = 0
-    gps_difference = 0
-    curve_counter = 0
-    straight_counter= 0
-    for second in run_records:
-        if second['position_lat'] is None:
-            continue
-        if second['position_long'] is None:
-            continue
-        if second['speed_mps'] is not None:
-            prev_derived = derived_distance
-            derived_distance += second['speed_mps']
-        if prev_second is not None:
-            if prev_second['position_lat'] is not None and prev_second['position_long'] is not None:
-                lat1 = prev_second['position_lat']
-                long1 = prev_second['position_long']
-                lat2 = second['position_lat']
-                long2 = second['position_long']
-                gps_change = find_gps_change(lat1, long1, lat2, long2)
-                if prev_gps_change != 0:
-                    gps_difference = abs((gps_change - prev_gps_change))
-                    if gps_difference > math.pi:
-                        gps_difference = abs((gps_difference - (2 * math.pi)))
-        if gps_difference < curve_threshold:
-            straight_counter += 1         #solve for straight using gps
-            if second['distance_m'] == next_lap:
-                lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
-                next_lap += lap_distance
-                last_lap_time = second['timestamp_unix']
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-            elif second['distance_m'] > next_lap:
-                if prev_second is None:
-                    prev_second = second
-                    next_lap += lap_distance
-                    continue
-                closing_speed = None
-                if prev_second['speed_mps'] is not None:
-                    closing_speed = prev_second['speed_mps']
-                if closing_speed:
-                    closing_distance = next_lap - prev_second['distance_m']
-                    closing_time = closing_distance / closing_speed
-                    lap_time = prev_second['timestamp_unix'] - last_lap_time
-                    final_time = closing_time + lap_time
-                    lap_splits.append(round(final_time, 2))
-                    last_lap_time = prev_second['timestamp_unix'] + closing_time
-                else:
-                    lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
-                    last_lap_time = second['timestamp_unix']
-                next_lap += lap_distance
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-            else:
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-        else:
-            curve_counter += 1
-            if derived_distance == next_lap:
-                lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
-                next_lap += lap_distance
-                last_lap_time = second['timestamp_unix']
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-            elif derived_distance > next_lap:
-                if prev_second is None:
-                    prev_second = second
-                    next_lap += lap_distance
-                    continue
-                closing_speed = None
-                if prev_second['speed_mps'] is not None:
-                    closing_speed = prev_second['speed_mps']
-                if closing_speed:
-                    closing_distance = next_lap - prev_derived
-                    closing_time = closing_distance / closing_speed
-                    lap_time = prev_second['timestamp_unix'] - last_lap_time
-                    final_time = closing_time + lap_time
-                    lap_splits.append(round(final_time, 2))
-                    last_lap_time = prev_second['timestamp_unix'] + closing_time
-                else:
-                    lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
-                    last_lap_time = second['timestamp_unix']
-                next_lap += lap_distance
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-            else:
-                prev_second = second
-                prev_gps_change = gps_change
-                continue
-    if last_lap_time < end_time:
-        remainder = end_time - last_lap_time
-        lap_splits.append(round(remainder, 2))
-    distance = run_records[-1]['distance_m']
-    print(lap_splits)
-    print(distance)
-    print(curve_counter, straight_counter)
     return lap_splits
 
 
