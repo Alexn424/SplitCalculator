@@ -67,7 +67,7 @@ def index():
 def upload():
     try:
         lap_distance = 400
-        lap_time = 60
+        lap_time = 76.45
         uploaded_file = request.files.get('file') 
         if uploaded_file is None or uploaded_file.filename == '' :
             return redirect('/')

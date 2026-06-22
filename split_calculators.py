@@ -147,8 +147,8 @@ def distance_lap_calculator(run_records, lap_distance):
         prev_second = second
         prev_blended = blended_distance
 
-    if next_lap < blended_distance:
-        remainder = blended_distance - next_lap
+    if blended_distance > (next_lap - lap_distance):
+        remainder = blended_distance - (next_lap - lap_distance)
         lap_splits.append(round(remainder, 2))
     distance = blended_distance
     print(f'Distance Splits: {lap_splits}')
@@ -233,13 +233,13 @@ def time_lap_calculator(run_records, lap_time):
         prev_second = second
         prev_blended = blended_distance
 
-    if next_lap < current_time:
+    total_elapsed = end_time - start_time
+    if last_lap_time < total_elapsed:
         remainder_distance = blended_distance - prev_lap
-        total_elapsed =  end_time - start_time
         remainder_time = total_elapsed - last_lap_time
         lap_distances.append(round(remainder_distance, 2))
 
-        print(f'''Lap Distances: {lap_distances} Distance Remainder: {remainder_distance}
-                Lap Times: {lap_times}
-                Time Remainder: {remainder_time}''')
+    print(f'''Lap Distances: {lap_distances} Distance Remainder: {remainder_distance}
+            Lap Times: {lap_times}
+            Time Remainder: {remainder_time}''')
     return lap_distances, remainder_distance, lap_times, remainder_time
