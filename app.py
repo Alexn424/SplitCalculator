@@ -82,7 +82,7 @@ def upload():
             uploaded_file.save(save_path)
             run_data = parse_fit(save_path)
             dlap_data = distance_lap_calculator(run_data, lap_distance)
-            tlap_data, remainder_time = time_lap_calculator(run_data, lap_time)
+            tlap_data, remainder_distance, lap_times, remainder_time = time_lap_calculator(run_data, lap_time)
         elif extension == '.zip': 
             safe_zip_name = secure_filename(uploaded_file.filename)
             save_path = os.path.join(app.config['UPLOAD_DIRECTORY'], safe_zip_name)
@@ -91,8 +91,10 @@ def upload():
             if not run_data:
                 return 'no fit files found in zip'
             dlap_data = distance_lap_calculator(run_data, lap_distance)
-            tlap_data, remainder_time = time_lap_calculator(run_data, lap_time)
-        return render_template('index.html', dlap_data=dlap_data, tlap_data=tlap_data, remainder_time=remainder_time)
+            tlap_data, remainder_distance, lap_times, remainder_time = time_lap_calculator(run_data, lap_time)
+        return render_template('index.html', dlap_data=dlap_data, tlap_data=tlap_data, remainder_distance=remainder_distance,
+                               lap_times=lap_times,
+                                remainder_time=remainder_time)
 
     except RequestEntityTooLarge:
         return 'file exceeds 16MB limit'

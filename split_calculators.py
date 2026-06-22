@@ -94,7 +94,7 @@ def distance_lap_calculator(run_records, lap_distance):
     start_time = run_records[0]['timestamp_unix']
     end_time = run_records[-1]['timestamp_unix']
     next_lap = lap_distance
-    last_lap_time = start_time
+    last_lap_time = 0
     prev_second = None
     derived_distance = 0
     prev_change = 0
@@ -122,18 +122,21 @@ def distance_lap_calculator(run_records, lap_distance):
             prev_change = gps_change
             blended_distance = (second['distance_m'] * (1 - blend_weight) + derived_distance * blend_weight)
         
+        if prev_blended is not None and blended_distance < prev_blended:
+            blended_distance = prev_blended
+        
         if prev_blended is not None:
             if blended_distance == next_lap:
                 lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
                 next_lap += lap_distance
                 last_lap_time = second['timestamp_unix']
                 continue
-            elif blended_distance > next_lap:
+            elif prev_blended < next_lap < blended_distance:
 
                 if blended_distance != prev_blended:
                     progress = (next_lap - prev_blended) / (blended_distance - prev_blended)
-                    prev_time = prev_second['timestamp_unix']
-                    current_time = second['timestamp_unix']
+                    prev_time = prev_second['timestamp_unix'] - start_time
+                    current_time = second['timestamp_unix'] - start_time
                     lap_time = prev_time + progress * (current_time - prev_time)
                     lap_split = lap_time - last_lap_time
                     lap_splits.append(round(lap_split, 2))
@@ -144,8 +147,8 @@ def distance_lap_calculator(run_records, lap_distance):
         prev_second = second
         prev_blended = blended_distance
 
-    if last_lap_time < end_time:
-        remainder = end_time - last_lap_time
+    if next_lap < blended_distance:
+        remainder = blended_distance - next_lap
         lap_splits.append(round(remainder, 2))
     distance = blended_distance
     print(f'Distance Splits: {lap_splits}')
@@ -158,21 +161,85 @@ def time_lap_calculator(run_records, lap_time):
     start_time = run_records[0]['timestamp_unix']
     end_time = run_records[-1]['timestamp_unix']
     lap_distances = []
+    lap_times = []
     next_lap = lap_time
-    prev_distance = 0
+    prev_lap = 0
     last_lap_time = None
     remainder_time = None
+    remainder_distance = 0
+    last_lap_time = 0
+    prev_second = None
+    derived_distance = 0
+    prev_change = 0
+    state = 'straight'
+    blend_weight = 0
+    momentum = 0
+    blended_distance = 0
+    prev_blended = None
+
     for second in run_records:
-        if second['timestamp_unix'] - start_time >= next_lap:
-            distance = second['distance_m']
-            window_distance = distance - prev_distance 
-            lap_distances.append(round(window_distance, 2))
-            prev_distance = distance
-            next_lap += lap_time
-            last_lap_time = second['timestamp_unix']
-    if prev_distance < run_records[-1]['distance_m']:
-        remainder = run_records[-1]['distance_m'] - prev_distance
-        remainder_time = end_time - last_lap_time
-        lap_distances.append(round(remainder, 2))
-    print(lap_distances, remainder_time)
-    return lap_distances, remainder_time
+        distance = second['distance_m']
+        if second['speed_mps'] is not None:
+            derived_distance += second['speed_mps']
+            blended_distance = derived_distance
+        
+        if distance is None:
+            distance = derived_distance
+
+        if prev_blended is None:
+            prev_blended = blended_distance
+        
+        if prev_second is not None and prev_second['position_lat'] is not None and prev_second['position_long'] is not None:
+
+            lat1 = prev_second['position_lat']
+            long1 = prev_second['position_long']
+            lat2 = second['position_lat']
+            long2 = second['position_long']
+            gps_change = find_gps_bearing(lat1, long1, lat2, long2)
+            if prev_change != 0:
+                gps_diff =  find_angle_diff(prev_change, gps_change)
+                state, momentum, blend_weight = state_machine(gps_diff, state, momentum, blend_weight)
+            prev_change = gps_change
+            blended_distance = (distance * (1 - blend_weight) + derived_distance * blend_weight)
+
+        if prev_blended is not None and blended_distance < prev_blended:
+            blended_distance = prev_blended
+
+        if prev_second is not None:
+            current_time = second['timestamp_unix'] - start_time
+            prev_time = prev_second['timestamp_unix'] - start_time
+
+            if current_time == next_lap:
+                lap_distance = blended_distance - prev_lap
+                absolute_lap_distance = blended_distance
+                lap_distances.append(round(lap_distance, 2))
+                next_lap += lap_time
+                lap_times.append(next_lap)
+                last_lap_time = current_time
+                prev_lap = absolute_lap_distance    
+               
+            elif prev_time < next_lap < current_time:
+                progress = (next_lap - prev_time) / (current_time - prev_time)
+                absolute_lap_distance = prev_blended + progress * (blended_distance - prev_blended)
+                lap_distance = absolute_lap_distance - prev_lap
+                lap_distances.append(round(lap_distance, 2))
+                next_lap += lap_time
+                lap_times.append(next_lap)
+                last_lap_time = current_time
+                prev_lap = absolute_lap_distance
+
+            
+
+        prev_second = second
+        prev_blended = blended_distance
+
+    if next_lap < current_time:
+        remainder_distance = blended_distance - prev_lap
+        total_elapsed =  end_time - start_time
+        remainder_time = total_elapsed - last_lap_time
+        lap_distances.append(round(remainder_distance, 2))
+
+        print(f'''Lap Distances: {lap_distances} Distance Remainder: {remainder_distance}
+                Lap Times: {lap_times}
+                Time Remainder: {remainder_time}''')
+    return lap_distances, remainder_distance, lap_times, remainder_time
