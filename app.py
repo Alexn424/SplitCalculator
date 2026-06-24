@@ -66,8 +66,19 @@ def index():
 
 def upload():
     try:
-        lap_distance = 400
-        lap_time = 76.45
+        lap_distance = request.form.get('lap_distance')
+        lap_time = request.form.get('lap_time')
+
+        run_dlap = lap_distance not in (None, '')
+        run_tlap = lap_time not in (None, '')
+
+        lap_distance = float(lap_distance) if run_dlap else 0
+        lap_time = float(lap_time) if run_tlap else 0 
+
+
+        dlap_data, lap_distances, distance_remainder = [], [], None
+        tlap_data, lap_times, remainder_distance, remainder_time = [], [], None, None
+
         uploaded_file = request.files.get('file') 
         if uploaded_file is None or uploaded_file.filename == '' :
             return redirect('/')
@@ -81,18 +92,37 @@ def upload():
             save_path = os.path.join(app.config['UPLOAD_DIRECTORY'], safe_name)
             uploaded_file.save(save_path)
             run_data = parse_fit(save_path)
-            dlap_data = distance_lap_calculator(run_data, lap_distance)
-            tlap_data, remainder_distance, lap_times, remainder_time = time_lap_calculator(run_data, lap_time)
+            if run_dlap:
+                if 0 < lap_distance <= run_data[-1]['distance_m']:
+                    dlap_data, lap_distances, distance_remainder = distance_lap_calculator(run_data, lap_distance)
+                else:
+                    return 'Please enter a valid lap distance that is 0 < distance <= total distance (some watches underead total distance)'
+            if run_tlap:
+                total_time = run_data[-1]['timestamp_unix'] - run_data[0]['timestamp_unix']
+                if 0 < lap_time <= total_time:
+                    tlap_data, remainder_distance, lap_times, remainder_time = time_lap_calculator(run_data, lap_time)
+                else:
+                    return 'Please enter a valid lap time that is 0 < lap_time <= total distance'
         elif extension == '.zip': 
             safe_zip_name = secure_filename(uploaded_file.filename)
             save_path = os.path.join(app.config['UPLOAD_DIRECTORY'], safe_zip_name)
             uploaded_file.save(save_path)
             run_data = import_zip_file(save_path)
-            if not run_data:
-                return 'no fit files found in zip'
-            dlap_data = distance_lap_calculator(run_data, lap_distance)
-            tlap_data, remainder_distance, lap_times, remainder_time = time_lap_calculator(run_data, lap_time)
-        return render_template('index.html', dlap_data=dlap_data, tlap_data=tlap_data, remainder_distance=remainder_distance,
+            if run_dlap:
+                if 0 < lap_distance <= run_data[-1]['distance_m']:
+                    dlap_data, lap_distances, distance_remainder = distance_lap_calculator(run_data, lap_distance)
+                else:
+                    return 'Please enter a valid lap distance that is 0 < distance <= total distance (some watches underead total distance)'
+            if run_tlap:
+                total_time = run_data[-1]['timestamp_unix'] - run_data[0]['timestamp_unix']
+                if 0 < lap_time <= total_time:
+                    tlap_data, remainder_distance, lap_times, remainder_time = time_lap_calculator(run_data, lap_time)
+                else:
+                    return 'Please enter a valid lap time that is 0 < lap_time <= total distance'
+        return render_template('index.html', dlap_data=dlap_data, distance_remainder=distance_remainder,
+                               lap_distances=lap_distances,
+                                tlap_data=tlap_data, 
+                               remainder_distance=remainder_distance,
                                lap_times=lap_times,
                                 remainder_time=remainder_time)
 

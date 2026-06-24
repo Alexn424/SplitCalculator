@@ -92,7 +92,7 @@ def state_machine(angle_diff, state, momentum, blend_weight):
 def distance_lap_calculator(run_records, lap_distance):
     lap_splits = []
     start_time = run_records[0]['timestamp_unix']
-    end_time = run_records[-1]['timestamp_unix']
+    lap_distances = []
     next_lap = lap_distance
     last_lap_time = 0
     prev_second = None
@@ -128,6 +128,7 @@ def distance_lap_calculator(run_records, lap_distance):
         if prev_blended is not None:
             if blended_distance == next_lap:
                 lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
+                lap_distances.append(next_lap)
                 next_lap += lap_distance
                 last_lap_time = second['timestamp_unix']
                 continue
@@ -141,6 +142,7 @@ def distance_lap_calculator(run_records, lap_distance):
                     lap_split = lap_time - last_lap_time
                     lap_splits.append(round(lap_split, 2))
                     last_lap_time = lap_time
+                    lap_distances.append(next_lap)
                     next_lap += lap_distance
                     continue
 
@@ -149,12 +151,12 @@ def distance_lap_calculator(run_records, lap_distance):
 
     if blended_distance > (next_lap - lap_distance):
         remainder = blended_distance - (next_lap - lap_distance)
-        lap_splits.append(round(remainder, 2))
+        remainder = round(remainder, 2)
     distance = blended_distance
     print(f'Distance Splits: {lap_splits}')
     print(f'total distance: {distance}')
 
-    return lap_splits
+    return lap_splits, lap_distances, remainder
 
 
 def time_lap_calculator(run_records, lap_time):
@@ -213,8 +215,8 @@ def time_lap_calculator(run_records, lap_time):
                 lap_distance = blended_distance - prev_lap
                 absolute_lap_distance = blended_distance
                 lap_distances.append(round(lap_distance, 2))
+                lap_times.append(round(next_lap, 2))
                 next_lap += lap_time
-                lap_times.append(next_lap)
                 last_lap_time = current_time
                 prev_lap = absolute_lap_distance    
                
@@ -223,8 +225,8 @@ def time_lap_calculator(run_records, lap_time):
                 absolute_lap_distance = prev_blended + progress * (blended_distance - prev_blended)
                 lap_distance = absolute_lap_distance - prev_lap
                 lap_distances.append(round(lap_distance, 2))
+                lap_times.append(round(next_lap, 2))
                 next_lap += lap_time
-                lap_times.append(next_lap)
                 last_lap_time = current_time
                 prev_lap = absolute_lap_distance
 
@@ -235,9 +237,9 @@ def time_lap_calculator(run_records, lap_time):
 
     total_elapsed = end_time - start_time
     if last_lap_time < total_elapsed:
-        remainder_distance = blended_distance - prev_lap
-        remainder_time = total_elapsed - last_lap_time
-        lap_distances.append(round(remainder_distance, 2))
+        remainder_distance = round((blended_distance - prev_lap), 2)
+        remainder_time = round((total_elapsed - last_lap_time), 2)
+
 
     print(f'''Lap Distances: {lap_distances} Distance Remainder: {remainder_distance}
             Lap Times: {lap_times}

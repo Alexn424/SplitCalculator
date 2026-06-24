@@ -8,12 +8,69 @@
 </head>
 <body>
   <div class="app">
-
+  
     <div class="form-section">
 
       <form action="/upload" method="post" enctype="multipart/form-data" >
-        <input type="file" name="file">
-        <input type="submit" value="upload">
-      </form>
 
+        <input type="file" name="file">
+
+        <label for="lap_distance">Enter Lap Distance (meters):</label>
+        <input type="number" name="lap_distance" min="1"/>
+        <br>
+        <label for="lap_distance">Enter Lap time (seconds):</label>
+        <input type="number" name="lap_time" min="1"/>
+        <br>
+        <button type="submit">Submit</button>
+      </form>
+    
     </div>
+  {% if dlap_data %}
+    <h2>Distance Laps</h2>
+
+      <div id="distance-output" class="result-box">
+        <table class="result-table">
+          <tr>
+            {% for ds in lap_distances%}
+              <th> {{ ds }}m </th>
+            {% endfor %}
+
+            <th>Remainder</th>
+          </tr>
+
+          <tr>
+            {% for d in dlap_data%}
+              <td>{{ d }}</td>
+            {% endfor %}
+
+            <td>{{ distance_remainder }}</td>
+          </tr>
+        </table>
+      </div>
+    {% endif %}
+
+  {% if dlap_data %} 
+    <h2>Time Laps</h2>
+
+      <div id="time-output" class="result">
+        <table class="result-table">
+          <tr>
+            {% for ts in lap_times %}
+              <th>{{ ts }}s</th>
+            {% endfor %}
+            <th>Time Remainder</th>
+            <th>Distance Remainder</th>
+          </tr>
+
+          <tr>
+            {% for d in tlap_data%}
+              <td>{{ d }}</td>
+            {% endfor %}
+            <td>{{ remainder_time }}</td>
+            <td>{{ remainder_distance }}</td>
+          </tr>
+        </table>
+      </div>
+  {% endif %}
+  </div>
+</body>
