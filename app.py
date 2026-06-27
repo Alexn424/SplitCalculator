@@ -76,7 +76,7 @@ def upload():
         lap_time = float(lap_time) if run_tlap else 0 
 
 
-        dlap_data, lap_distances, distance_remainder = [], [], None
+        dlap_data, lap_distances, distance_remainder, time_remainder = [], [], None, None
         tlap_data, lap_times, remainder_distance, remainder_time = [], [], None, None
 
         uploaded_file = request.files.get('file') 
@@ -94,7 +94,8 @@ def upload():
             run_data = parse_fit(save_path)
             if run_dlap:
                 if 0 < lap_distance <= run_data[-1]['distance_m']:
-                    dlap_data, lap_distances, distance_remainder = distance_lap_calculator(run_data, lap_distance)
+                    (dlap_data, lap_distances, distance_remainder, time_remainder,
+                    lap_confidences, total_confidence) = distance_lap_calculator(run_data, lap_distance)
                 else:
                     return 'Please enter a valid lap distance that is 0 < distance <= total distance (some watches underead total distance)'
             if run_tlap:
@@ -110,7 +111,8 @@ def upload():
             run_data = import_zip_file(save_path)
             if run_dlap:
                 if 0 < lap_distance <= run_data[-1]['distance_m']:
-                    dlap_data, lap_distances, distance_remainder = distance_lap_calculator(run_data, lap_distance)
+                    (dlap_data, lap_distances, distance_remainder, time_remainder,
+                    lap_confidences, total_confidence)= distance_lap_calculator(run_data, lap_distance)
                 else:
                     return 'Please enter a valid lap distance that is 0 < distance <= total distance (some watches underead total distance)'
             if run_tlap:
@@ -120,6 +122,7 @@ def upload():
                 else:
                     return 'Please enter a valid lap time that is 0 < lap_time <= total distance'
         return render_template('index.html', dlap_data=dlap_data, distance_remainder=distance_remainder,
+                               time_remainder=time_remainder,
                                lap_distances=lap_distances,
                                 tlap_data=tlap_data, 
                                remainder_distance=remainder_distance,

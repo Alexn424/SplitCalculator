@@ -1,5 +1,5 @@
 import math
-
+from collections import deque
 
 def find_gps_bearing(lat1, long1, lat2, long2):
     conversion = math.pi / 2**31
@@ -28,7 +28,7 @@ def find_angle_diff(heading1, heading2):
 
 
 
-def state_machine(angle_diff, state, momentum, blend_weight):
+def state_machine(gps_diff, state, momentum, blend_weight):
     current_state = state
     low_threshold = 0.03
     high_threshold = 0.1
@@ -36,6 +36,9 @@ def state_machine(angle_diff, state, momentum, blend_weight):
     c_blend_weight = max(0, min(1, c_blend_weight))
     cur_threshold = 3
     str_threshold = -5
+    curve_count = 0
+    straight_count = 0
+    angle_diff = abs(gps_diff)
 
 
     if current_state == 'straight':
@@ -73,6 +76,7 @@ def state_machine(angle_diff, state, momentum, blend_weight):
             momentum = max(-5, min(3, momentum))
             if momentum == str_threshold:
                 current_state = 'straight'
+                straight_count += 1
                 c_blend_weight = 0
         
         elif low_threshold < angle_diff < high_threshold:
@@ -81,17 +85,36 @@ def state_machine(angle_diff, state, momentum, blend_weight):
         elif high_threshold <= angle_diff:
             momentum += 1
             c_blend_weight += 0.33
+            c_blend_weight = max(0, min(1, c_blend_weight))
             momentum = max(-5, min(3, momentum))
             if momentum == cur_threshold:
                 current_state = 'curved'
+                curve_count += 1
                 c_blend_weight = 1
+
+    #print(f'straight count: {straight_count}')
+    #print(f'curve_count: {curve_count}')
+    #print('blend_weight', c_blend_weight)
+    #print('state', state)
+    #print('momentum', momentum)
+    #print('angle_diff', angle_diff)
         
     return current_state, momentum, c_blend_weight
         
+def find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
+                           speed_spikes, record_inconsistency, remainder_penalty):
+    spike_penalty = (distance_spikes + speed_spikes) / 2 
+    bearing_penalty = max(0, bearing_anomalies -1 )
+    confidence_score = (100 - (bearing_penalty * 5) - (spike_penalty * 10) - (timestamp_gaps * 3) 
+                        - (record_inconsistency * 15) - (remainder_penalty * 15)
+    )
+    confidence_score = max(0, confidence_score)
+    return confidence_score
 
 def distance_lap_calculator(run_records, lap_distance):
     lap_splits = []
     start_time = run_records[0]['timestamp_unix']
+    end_time = run_records[-1]['timestamp_unix']
     lap_distances = []
     next_lap = lap_distance
     last_lap_time = 0
@@ -104,8 +127,28 @@ def distance_lap_calculator(run_records, lap_distance):
     blended_distance = 0
     prev_blended = None
 
+    #confidence score related stuff
+    confidence_scores = []
+    lap_confidence_scores = []
+    confidence_score = 0
+    timestamp_gaps = 0
+    distance_spikes = 0
+    rolling_distance = deque(maxlen=5)
+    distance_avg = 0
+    bearing_anomaly_threshold = 0.55
+    bearing_anomalies = 0
+    speed_spikes = 0
+    rolling_speed = deque(maxlen=5)
+    speed_avg = 0
+    lap_record_count = 0
+    record_inconsistency = 0
+    remainder_penalty = 0
+
+
     for second in run_records:
         
+        avg_sampling_rate = (end_time - start_time) / len(run_records)
+
         if second['speed_mps'] is not None:
             derived_distance += second['speed_mps']
             blended_distance = derived_distance
@@ -119,19 +162,104 @@ def distance_lap_calculator(run_records, lap_distance):
             if prev_change != 0:
                 gps_diff =  find_angle_diff(prev_change, gps_change)
                 state, momentum, blend_weight = state_machine(gps_diff, state, momentum, blend_weight)
+                if gps_diff > bearing_anomaly_threshold and blend_weight < 0.6:
+                    bearing_anomalies += 1
             prev_change = gps_change
             blended_distance = (second['distance_m'] * (1 - blend_weight) + derived_distance * blend_weight)
-        
+            print(blend_weight)
+
+            timestamp = second['timestamp_unix']
+            prev_timestamp = prev_second['timestamp_unix']
+            speed = second['speed_mps']
+            prev_speed = prev_second['speed_mps']
+            #confidence score code
+
+            #print('gps distance', second['distance_m'])
+            #print('blended_distance', blended_distance)
+
+            if timestamp is not None and prev_timestamp is not None:
+                if abs((timestamp - prev_timestamp) -1) > 0.5:
+                    timestamp_gaps += 1
+
+                if blended_distance is not None and prev_blended is not None:
+                    distance_change = blended_distance - prev_blended
+                    if (timestamp - start_time) > 3 and (end_time - timestamp) > 3:
+                        if len(rolling_distance) > 2 and abs(distance_change - distance_avg) > 18:
+                            print('3', distance_change, distance_avg)
+                            distance_change = distance_avg
+                            distance_spikes += 5
+                        elif len(rolling_distance) > 2 and abs(distance_change - distance_avg) > 10:
+                            print('2', distance_change, distance_avg)
+                            distance_change = distance_avg
+                            distance_spikes += 3
+                        elif len(rolling_distance) > 2 and abs(distance_change - distance_avg) > 5:
+                            print('1', distance_change, distance_avg)
+                            distance_spikes += 1
+                    rolling_distance.append(distance_change)
+                    distance_avg = sum(rolling_distance) / len(rolling_distance)
+                    
+                    lap_record_count += 1
+
+
+                if speed is not None and prev_speed is not None:
+                    speed_change = speed - prev_speed
+                    if (timestamp - start_time) > 3 and (end_time - timestamp) > 3:
+                        if len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 18:
+                            speed_change = speed_avg
+                            speed_spikes += 5
+                        elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 10:
+                            speed_change = speed_avg
+                            speed_spikes += 3
+                        elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 5:
+                            speed_spikes += 1
+                    rolling_speed.append(speed_change)
+                    speed_avg = sum(rolling_speed) / len(rolling_speed)
+
         if prev_blended is not None and blended_distance < prev_blended:
             blended_distance = prev_blended
+
+        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, speed_spikes, record_inconsistency, 
+                              remainder_penalty)
+        if any(x != 0 for x in confidence_metrics):
+            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
+                           speed_spikes, record_inconsistency, remainder_penalty)
+            confidence_scores.append(confidence_score)
+
+        #main lap logic
         
         if prev_blended is not None:
             if blended_distance == next_lap:
-                lap_splits.append(round(second['timestamp_unix'] - last_lap_time, 2))
+                lap_split = second['timestamp_unix'] - last_lap_time
+                lap_splits.append(round(lap_split, 2))
                 lap_distances.append(next_lap)
                 next_lap += lap_distance
                 last_lap_time = second['timestamp_unix']
+                expected_record = int(lap_split / avg_sampling_rate)
+                record_difference = abs(expected_record - lap_record_count)
+                if record_difference > 1:
+                    record_inconsistency += record_difference
+                remainder_difference = abs(blended_distance - derived_distance)
+                if remainder_difference > 25:
+                    remainder_penalty += 9
+                elif remainder_difference > 15:
+                    remainder_penalty += 5
+                elif remainder_penalty > 8:
+                    remainder_penalty += 2
+                avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 100
+                lap_confidence_scores.append(avg_confidence)
+                score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
+                     'speed_spikes': speed_spikes, 'bearing_anomolies': bearing_anomalies,
+                     'record_inconsistency': record_inconsistency, 'remainder_penalty': remainder_penalty}
+                #print(score_factors)
+                timestamp_gaps = 0
+                distance_spikes = 0
+                bearing_anomalies = 0
+                speed_spikes = 0
+                confidence_scores = []
+                record_inconsistency = 0
+                lap_record_count = 0
                 continue
+
             elif prev_blended < next_lap < blended_distance:
 
                 if blended_distance != prev_blended:
@@ -144,19 +272,53 @@ def distance_lap_calculator(run_records, lap_distance):
                     last_lap_time = lap_time
                     lap_distances.append(next_lap)
                     next_lap += lap_distance
+                    expected_record = int(lap_split / avg_sampling_rate)
+                    record_difference = abs(expected_record - lap_record_count)
+                    if record_difference > 1:
+                        record_inconsistency += record_difference
+                    remainder_difference = abs(blended_distance - derived_distance)
+                    if remainder_difference > 25:
+                        remainder_penalty += 9
+                    elif remainder_difference > 15:
+                        remainder_penalty += 5
+                    elif remainder_penalty > 8:
+                        remainder_penalty += 20
+                    avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 100
+                    lap_confidence_scores.append(avg_confidence)
+                    score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
+                     'speed_spikes': speed_spikes, 'bearing_anomolies': bearing_anomalies,
+                     'record_inconsistency': record_inconsistency}
+                    print(f'gps distance {second['distance_m']}')
+                    print(f'Derived Distance {derived_distance}')
+                    print(f'blended distance: {blended_distance}')
+                    print(score_factors)
+                    timestamp_gaps = 0
+                    distance_spikes = 0
+                    bearing_anomalies = 0
+                    speed_spikes = 0
+                    confidence_scores = []
+                    record_inconsistency = 0
+                    lap_record_count = 0
                     continue
 
         prev_second = second
         prev_blended = blended_distance
 
     if blended_distance > (next_lap - lap_distance):
-        remainder = blended_distance - (next_lap - lap_distance)
-        remainder = round(remainder, 2)
-    distance = blended_distance
+        distance_remainder = blended_distance - (next_lap - lap_distance)
+        distance_remainder = round(distance_remainder, 2)
+        time_remainder = ((end_time - start_time) - last_lap_time)
+        time_remainder = round(time_remainder, 2)
+    avg_total_confidence = sum(lap_confidence_scores) / len(lap_confidence_scores) if lap_confidence_scores else 100
     print(f'Distance Splits: {lap_splits}')
-    print(f'total distance: {distance}')
+    print(f'gps distance {second['distance_m']}')
+    print(f'Derived Distance {derived_distance}')
+    print(f'blended distance: {blended_distance}')
+    print(second['position_lat'], second['position_long'])
+    print(f'Lap Confidence: {lap_confidence_scores} Total Confidence: {avg_total_confidence} ')
+    
 
-    return lap_splits, lap_distances, remainder
+    return lap_splits, lap_distances, distance_remainder, time_remainder, lap_confidence_scores, avg_total_confidence
 
 
 def time_lap_calculator(run_records, lap_time):

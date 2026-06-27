@@ -4,73 +4,126 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
-    <title>Document</title>
+    <title>Split Calculator</title>
 </head>
 <body>
   <div class="app">
-  
-    <div class="form-section">
 
-      <form action="/upload" method="post" enctype="multipart/form-data" >
+    <div class="app-inner">
+      <div class="app-banner">🏃 Running Split Calculator</div>
 
-        <input type="file" name="file">
+      <form action="/upload" method="post" enctype="multipart/form-data">
 
-        <label for="lap_distance">Enter Lap Distance (meters):</label>
-        <input type="number" name="lap_distance" min="1"/>
-        <br>
-        <label for="lap_distance">Enter Lap time (seconds):</label>
-        <input type="number" name="lap_time" min="1"/>
-        <br>
-        <button type="submit">Submit</button>
+        <div class="panel">
+          <div class="panel-title">📁 Upload .FIT or .ZIP file</div>
+          <div class="panel-body">
+            <div class="drop-zone" id="drop-zone">
+              <span class="drop-zone-icon">📂</span>
+              <strong>Drop file here or click to browse</strong>
+              <p>.fit · .zip · max 16MB</p>
+              <div class="drop-zone-filename" id="drop-name"></div>
+            </div>
+            <input type="file" name="file" id="file-input" accept=".fit,.zip" style="display:none">
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-title">⚙ Lap Settings</div>
+          <div class="panel-body-row">
+            <div class="form-row">
+              <label for="lap_distance">Lap Distance (meters):</label>
+              <input type="number" name="lap_distance" id="lap_distance" min="1"/>
+            </div>
+            <div class="form-row">
+              <label for="lap_time">Lap Time (seconds):</label>
+              <input type="number" name="lap_time" id="lap_time" min="1"/>
+            </div>
+            <button type="submit">✔ Calculate Splits</button>
+          </div>
+        </div>
+
       </form>
-    
-    </div>
-  {% if dlap_data %}
-    <h2>Distance Laps</h2>
 
+      {% if dlap_data %}
+      <h2>📊 Distance Laps</h2>
       <div id="distance-output" class="result-box">
         <table class="result-table">
           <tr>
-            {% for ds in lap_distances%}
-              <th> {{ ds }}m </th>
+            {% for ds in lap_distances %}
+              <th>{{ ds }}m</th>
             {% endfor %}
-
-            <th>Remainder</th>
+            <th>Time Remainder (s)</th>
+            <th>Dist. Remainder (m)</th>
           </tr>
-
           <tr>
-            {% for d in dlap_data%}
-              <td>{{ d }}</td>
+            {% for d in dlap_data %}
+              <td>{{ d }}s</td>
             {% endfor %}
-
-            <td>{{ distance_remainder }}</td>
+            <td>{{ time_remainder }}s</td>
+            <td>{{ distance_remainder }}m</td>
           </tr>
         </table>
       </div>
-    {% endif %}
+      {% endif %}
 
-  {% if dlap_data %} 
-    <h2>Time Laps</h2>
-
+      {% if tlap_data %}
+      <h2>⏱ Time Laps</h2>
       <div id="time-output" class="result">
         <table class="result-table">
           <tr>
             {% for ts in lap_times %}
-              <th>{{ ts }}s</th>
+              <th>{{ ts }}m</th>
             {% endfor %}
-            <th>Time Remainder</th>
-            <th>Distance Remainder</th>
+            <th>Dist. Remainder (m)</th>
+            <th>Time Remainder (s)</th>
           </tr>
-
           <tr>
-            {% for d in tlap_data%}
-              <td>{{ d }}</td>
+            {% for d in tlap_data %}
+              <td>{{ d }}s</td>
             {% endfor %}
-            <td>{{ remainder_time }}</td>
-            <td>{{ remainder_distance }}</td>
+            <td>{{ remainder_distance }}m</td>
+            <td>{{ remainder_time }}s</td>
           </tr>
         </table>
       </div>
-  {% endif %}
+      {% endif %}
+
+    </div>
+
+    <div class="status-bar">Ready | .FIT and .ZIP supported | Max 16MB</div>
+
   </div>
+
+  <script>
+    const zone = document.getElementById('drop-zone');
+    const input = document.getElementById('file-input');
+    const label = document.getElementById('drop-name');
+
+    zone.addEventListener('click', () => input.click());
+
+    zone.addEventListener('dragover', e => {
+      e.preventDefault();
+      zone.classList.add('dragover');
+    });
+
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+
+    zone.addEventListener('drop', e => {
+      e.preventDefault();
+      zone.classList.remove('dragover');
+      const f = e.dataTransfer.files[0];
+      if (f) {
+        label.textContent = '📄 ' + f.name;
+        const dt = new DataTransfer();
+        dt.items.add(f);
+        input.files = dt.files;
+      }
+    });
+
+    input.addEventListener('change', () => {
+      if (input.files[0]) label.textContent = '📄 ' + input.files[0].name;
+    });
+  </script>
+
 </body>
+</html>
