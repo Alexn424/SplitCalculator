@@ -105,7 +105,7 @@ def find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
                            speed_spikes, record_inconsistency, remainder_penalty):
     spike_penalty = (distance_spikes + speed_spikes) / 2 
     bearing_penalty = max(0, bearing_anomalies -1 )
-    confidence_score = (100 - (bearing_penalty * 5) - (spike_penalty * 12) - (timestamp_gaps * 3) 
+    confidence_score = (100 - (bearing_penalty * 5) - (spike_penalty * 12) - (timestamp_gaps * 2) 
                         - (record_inconsistency * 15))
     confidence_score = max(0, confidence_score)
     return confidence_score
@@ -190,7 +190,7 @@ def distance_lap_calculator(run_records, lap_distance):
                         elif len(rolling_distance) > 2 and abs(distance_change - distance_avg) > 10:
                             print('2', distance_change, distance_avg)
                             distance_change = distance_avg
-                            distance_spikes += 5
+                            distance_spikes += 3
                         elif len(rolling_distance) > 2 and abs(distance_change - distance_avg) > 5:
                             print('1', distance_change, distance_avg)
                             distance_spikes += 1
@@ -208,7 +208,7 @@ def distance_lap_calculator(run_records, lap_distance):
                             speed_spikes += 7
                         elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 10:
                             speed_change = speed_avg
-                            speed_spikes += 5
+                            speed_spikes += 3
                         elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 5:
                             speed_spikes += 1
                     rolling_speed.append(speed_change)
@@ -244,14 +244,17 @@ def distance_lap_calculator(run_records, lap_distance):
                     remainder_penalty += 5
                 elif remainder_penalty > 8:
                     remainder_penalty += 2
-                prev_confidence = lap_confidence_scores[lap_count]
-                carryover_factor = min(0.15, lap_distance / 400 * 0.15)
-                carryover = max(0, min(10, max(0, 100 - prev_confidence) * carryover_factor))
+                if lap_count > 0:
+                    prev_confidence = lap_confidence_scores[lap_count]
+                    carryover_factor = min(0.2, lap_distance / 400 * 0.2)
+                    carryover = max(0, min(10, max(0, 100 - prev_confidence) * carryover_factor))
+                else:
+                    carryover = 0
                 avg_confidence = ((sum(confidence_scores) / len(confidence_scores) if confidence_scores else 100)
                                       - remainder_penalty * 3)
                 avg_confidence -= carryover
                 avg_confidence = max(0, avg_confidence)
-                lap_confidence_scores.append(avg_confidence)
+                lap_confidence_scores.append(round(avg_confidence, 2))
                 score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
                      'speed_spikes': speed_spikes, 'bearing_anomolies': bearing_anomalies,
                      'record_inconsistency': record_inconsistency, 'remainder_penalty': remainder_penalty}
@@ -292,13 +295,14 @@ def distance_lap_calculator(run_records, lap_distance):
                         remainder_penalty += 2
                     if lap_count > 0:
                         prev_confidence = lap_confidence_scores[lap_count - 1]
-                        carryover = max(0, 100 - prev_confidence) * 0.15
+                        carryover_factor = min(0.2, lap_distance / 400 * 0.2)
+                        carryover = max(0, min(10, max(0, 100 - prev_confidence) * carryover_factor))
                     else:
                         carryover = 0
                     avg_confidence = ((sum(confidence_scores) / len(confidence_scores) if confidence_scores else 100)
                                         - remainder_penalty * 3)
                     avg_confidence -= carryover
-                    lap_confidence_scores.append(avg_confidence)
+                    lap_confidence_scores.append(round(avg_confidence, 2))
                     score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
                      'speed_spikes': speed_spikes,
                        'bearing_anomolies': bearing_anomalies,'record_inconsistency': record_inconsistency,
