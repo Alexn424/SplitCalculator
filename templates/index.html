@@ -70,7 +70,7 @@
             {% for c in dlap_info.lap_confidence_scores %}
               <td>{{ c }}%</td>
             {% endfor %}
-            <td class="conf-avg" colspan="2">{{ dlap_info.avg_confidence or 'N/A'}}</td>
+            <td class="conf-avg" colspan="2">{{ dlap_info.avg_confidence or 'N/A'}}%</td>
           </tr>
         </table>
       </div>
@@ -154,9 +154,9 @@
           </tr>
           <tr class="conf-data">
             {% for c in tlap_info.lap_confidence_scores %}
-              <td>{{ c }}</td>
+              <td>{{ c }}%</td>
             {% endfor %}
-            <td class="conf-avg" colspan="2">{{ tlap_info.avg_confidence or 'N/A'}}</td>
+            <td class="conf-avg" colspan="2">{{ tlap_info.avg_confidence or 'N/A'}}%</td>
           </tr>
         </table>
       </div>
