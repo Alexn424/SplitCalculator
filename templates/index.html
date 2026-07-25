@@ -63,8 +63,8 @@
             <td>{{ dlap_info.distance_remainder }}m</td>
           </tr>
           <tr class="conf-header">
-            <td colspan="{{ dlap_info.lap_distances | length }}">Confidence Scores</td>
-            <td colspan="2">Avg Confidence</td>
+            <td colspan="{{ dlap_info.lap_distances | length }}">Lap Confidence</td>
+            <td colspan="2">Avg Total Confidence</td>
           </tr>
           <tr class="conf-data">
             {% for c in dlap_info.lap_confidence_scores %}
@@ -149,7 +149,7 @@
             <td>{{ tlap_info.remainder_time }}s</td>
           </tr>
           <tr class="conf-header">
-            <td colspan="{{ tlap_info.lap_times | length }}">Confidence Scores</td>
+            <td colspan="{{ tlap_info.lap_times | length }}">Lap Confidence</td>
             <td colspan="2">Avg Total Confidence</td>
           </tr>
           <tr class="conf-data">
