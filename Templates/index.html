@@ -31,12 +31,12 @@
           <div class="panel-title">⚙ Lap Settings</div>
           <div class="panel-body-row">
             <div class="form-row">
-              <label for="lap_distance">Lap Distance (meters):</label>
+              <label for="lap_distance">Lap Distance (m):</label>
               <input type="number" name="lap_distance" id="lap_distance" min="1"/>
             </div>
             <div class="form-row">
-              <label for="lap_time">Lap Time (seconds):</label>
-              <input type="number" name="lap_time" id="lap_time" min="1"/>
+              <label for="lap_time">Lap Time (sec):</label>
+              <input type="number" name="lap_time" id="lap_time" min="1" step="any"/>
             </div>
             <button type="submit">✔ Calculate Splits</button>
           </div>
@@ -44,47 +44,181 @@
 
       </form>
 
-      {% if dlap_data %}
+      {% if dlap_info.dlap_data %}
       <h2>📊 Distance Laps</h2>
       <div id="distance-output" class="result-box">
         <table class="result-table">
           <tr>
-            {% for ds in lap_distances %}
+            {% for ds in dlap_info.lap_distances %}
               <th>{{ ds }}m</th>
             {% endfor %}
             <th>Time Remainder (s)</th>
             <th>Dist. Remainder (m)</th>
           </tr>
-          <tr>
-            {% for d in dlap_data %}
+          <tr class="data-row">
+            {% for d in dlap_info.dlap_data %}
               <td>{{ d }}s</td>
             {% endfor %}
-            <td>{{ time_remainder }}s</td>
-            <td>{{ distance_remainder }}m</td>
+            <td>{{ dlap_info.time_remainder }}s</td>
+            <td>{{ dlap_info.distance_remainder }}m</td>
+          </tr>
+          <tr class="conf-header">
+            <td colspan="{{ dlap_info.lap_distances | length }}">Confidence Scores</td>
+            <td colspan="2">Avg Confidence</td>
+          </tr>
+          <tr class="conf-data">
+            {% for c in dlap_info.lap_confidence_scores %}
+              <td>{{ c }}%</td>
+            {% endfor %}
+            <td class="conf-avg" colspan="2">{{ dlap_info.avg_confidence or 'N/A'}}</td>
           </tr>
         </table>
       </div>
+
+      <div class="gauge-panel">
+        <div class="gauge-header">
+          <div class="gauge-legend">
+            <span><span class="legend-box-black"></span> Lap</span>
+            <span><span class="legend-box-blue"></span> Avg</span>
+          </div>
+          <div class="gauge-title">Confidence Gauge</div>
+        </div>
+        <div class="gauge-wrap" id="dlap-gauge-wrap">
+          <div class="gauge-track"></div>
+        </div>
+        <div class="gauge-scale">
+          <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+        </div>
+      </div>
+
+      <script>
+        (function() {
+          const scores = {{ dlap_info.lap_confidence_scores | tojson }};
+          const avg = {{ dlap_info.avg_confidence or 0 }};
+          const THRESHOLD = 2;
+          const wrap = document.getElementById('dlap-gauge-wrap');
+
+          const lapGroups = [];
+          scores.forEach((s, i) => {
+            const existing = lapGroups.find(g => Math.abs(g.val - s) <= THRESHOLD);
+            if (existing) existing.laps.push(i + 1);
+            else lapGroups.push({ val: s, laps: [i + 1] });
+          });
+
+          const allMarkers = [
+            ...lapGroups.map(g => ({ val: g.val, label: g.laps.map(l => l).join(' & '), isAvg: false })),
+            { val: avg, label: 'Avg', isAvg: true }
+          ].sort((a, b) => a.val - b.val);
+
+          allMarkers.forEach((m, idx) => {
+            const above = idx % 2 === 0;
+
+            const block = document.createElement('div');
+            block.className = m.isAvg ? 'gauge-avg-block' : 'gauge-marker-block';
+            block.style.left = m.val + '%';
+
+            const lbl = document.createElement('div');
+            lbl.className = m.isAvg ? 'gauge-avg-label' : 'gauge-marker-label';
+            lbl.textContent = m.label;
+            lbl.style.left = m.val + '%';
+            lbl.style[above ? 'bottom' : 'top'] = '26px';
+
+            wrap.appendChild(block);
+            wrap.appendChild(lbl);
+          });
+        })();
+      </script>
       {% endif %}
 
-      {% if tlap_data %}
+      {% if tlap_info.tlap_data %}
       <h2>⏱ Time Laps</h2>
       <div id="time-output" class="result">
         <table class="result-table">
           <tr>
-            {% for ts in lap_times %}
-              <th>{{ ts }}m</th>
+            {% for ts in tlap_info.lap_times %}
+              <th>{{ ts }}s</th>
             {% endfor %}
             <th>Dist. Remainder (m)</th>
             <th>Time Remainder (s)</th>
           </tr>
-          <tr>
-            {% for d in tlap_data %}
-              <td>{{ d }}s</td>
+          <tr class="data-row">
+            {% for d in tlap_info.tlap_data %}
+              <td>{{ d }}m</td>
             {% endfor %}
-            <td>{{ remainder_distance }}m</td>
-            <td>{{ remainder_time }}s</td>
+            <td>{{ tlap_info.remainder_distance }}m</td>
+            <td>{{ tlap_info.remainder_time }}s</td>
+          </tr>
+          <tr class="conf-header">
+            <td colspan="{{ tlap_info.lap_times | length }}">Confidence Scores</td>
+            <td colspan="2">Avg Total Confidence</td>
+          </tr>
+          <tr class="conf-data">
+            {% for c in tlap_info.lap_confidence_scores %}
+              <td>{{ c }}</td>
+            {% endfor %}
+            <td class="conf-avg" colspan="2">{{ tlap_info.avg_confidence or 'N/A'}}</td>
           </tr>
         </table>
+      </div>
+
+      <div class="gauge-panel">
+        <div class="gauge-header">
+          <div class="gauge-legend">
+            <span><span class="legend-box-black"></span> Lap</span>
+            <span><span class="legend-box-blue"></span> Avg</span>
+          </div>
+          <div class="gauge-title">Confidence Gauge</div>
+        </div>
+        <div class="gauge-wrap" id="tlap-gauge-wrap">
+          <div class="gauge-track"></div>
+        </div>
+        <div class="gauge-scale">
+          <span>0</span><span>25</span><span>50</span><span>75</span><span>100</span>
+        </div>
+      </div>
+
+      <script>
+        (function() {
+          const scores = {{ tlap_info.lap_confidence_scores | tojson }};
+          const avg = {{ tlap_info.avg_confidence or 0}};
+          const THRESHOLD = 2;
+          const wrap = document.getElementById('tlap-gauge-wrap');
+
+          const lapGroups = [];
+          scores.forEach((s, i) => {
+            const existing = lapGroups.find(g => Math.abs(g.val - s) <= THRESHOLD);
+            if (existing) existing.laps.push(i + 1);
+            else lapGroups.push({ val: s, laps: [i + 1] });
+          });
+
+          const allMarkers = [
+            ...lapGroups.map(g => ({ val: g.val, label: g.laps.map(l => l).join(' & '), isAvg: false })),
+            { val: avg, label: 'Avg', isAvg: true }
+          ].sort((a, b) => a.val - b.val);
+
+          allMarkers.forEach((m, idx) => {
+            const above = idx % 2 === 0;
+
+            const block = document.createElement('div');
+            block.className = m.isAvg ? 'gauge-avg-block' : 'gauge-marker-block';
+            block.style.left = m.val + '%';
+
+            const lbl = document.createElement('div');
+            lbl.className = m.isAvg ? 'gauge-avg-label' : 'gauge-marker-label';
+            lbl.textContent = m.label;
+            lbl.style.left = m.val + '%';
+            lbl.style[above ? 'bottom' : 'top'] = '26px';
+
+            wrap.appendChild(block);
+            wrap.appendChild(lbl);
+          });
+        })();
+      </script>
+      {% endif %}
+
+      {% if dlap_info.dlap_data or tlap_info.tlap_data %}
+      <div class="bottom-note">
+        GPS watches and accelerometers are not perfect — errors are caused by GPS drift and sensor lag and cannot be fully eliminated. Confidence is calculated from distance spikes, sharp direction changes, and other anomalies. <b>90+</b> splits are accurate. <b>80–90</b> may be off by 1–2s. <b>70–80</b> first/last laps may differ slightly. <b>60–70</b> first/last laps may differ up to 5s, middle laps 1–2s. <b>Below 60</b> results are likely inaccurate.
       </div>
       {% endif %}
 
@@ -100,14 +234,8 @@
     const label = document.getElementById('drop-name');
 
     zone.addEventListener('click', () => input.click());
-
-    zone.addEventListener('dragover', e => {
-      e.preventDefault();
-      zone.classList.add('dragover');
-    });
-
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
     zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
-
     zone.addEventListener('drop', e => {
       e.preventDefault();
       zone.classList.remove('dragover');
@@ -119,7 +247,6 @@
         input.files = dt.files;
       }
     });
-
     input.addEventListener('change', () => {
       if (input.files[0]) label.textContent = '📄 ' + input.files[0].name;
     });

@@ -16,7 +16,7 @@ body {
 .app {
   width: 100%;
   max-width: 840px;
-  min-width: 840px; 
+  min-width: 840px;
   background: #d4d0c8;
   border: 2px solid #fff;
   border-right-color: #404040;
@@ -184,7 +184,7 @@ h2 {
 .result-box,
 .result {
   overflow-x: auto;
-  margin-bottom: 12px;
+  margin-bottom: 0;
 }
 
 .result-table {
@@ -219,9 +219,166 @@ h2 {
   background: #eef2fa;
 }
 
-.result-table td:nth-last-child(-n+2) {
+.result-table tr.data-row td:nth-last-child(-n+2) {
   color: #8b0000;
   font-size: 20px;
+}
+
+
+/* ── Confidence rows ── */
+.conf-header td {
+  background: #003c7f;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  padding: 5px 12px;
+  text-align: center;
+  border: 1px solid #001f4d;
+}
+
+.conf-data td {
+  background: #fff;
+  color: #003c7f;
+  font-size: 20px;
+  font-weight: bold;
+  padding: 10px 16px;
+  text-align: center;
+  border: 1px solid #808080;
+}
+
+.conf-data td.conf-avg {
+  color: #003c7f;
+}
+
+
+/* ── Confidence gauge ── */
+.gauge-panel {
+  border: 1px solid #808080;
+  border-top: none;
+  background: #f0ede8;
+  padding: 10px 12px 14px;
+  margin-bottom: 12px;
+}
+
+/* title row: "Confidence Gauge" on left, legend on right, all same line */
+.gauge-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+}
+
+.gauge-title {
+  font-size: 12px;
+  font-weight: bold;
+  color: #003c7f;
+  text-align: center;
+}
+
+/* legend pinned to top-left, title stays centered */
+.gauge-legend {
+  position: absolute;
+  left: 0;
+  display: flex;
+  gap: 12px;
+  font-size: 10px;
+  color: #444;
+  align-items: center;
+}
+
+.gauge-legend span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* box swatch for the legend */
+.legend-box-black {
+  width: 14px;
+  height: 14px;
+  background: #000;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.legend-box-blue {
+  width: 14px;
+  height: 14px;
+  background: #003c7f;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+/* gauge track closer to the title */
+.gauge-wrap {
+  position: relative;
+  height: 20px;
+  margin: 0 0 40px;
+}
+
+.gauge-track {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 20px;
+  background: linear-gradient(to right, #cc2200, #dd7700, #cccc00, #44aa00);
+  border: 1px inset #808080;
+}
+
+/* markers on the bar — thin line style */
+.gauge-marker-block {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 20px;
+  background: #000;
+  transform: translateX(-50%);
+}
+
+.gauge-avg-block {
+  position: absolute;
+  top: 0;
+  width: 3px;
+  height: 20px;
+  background: #003c7f;
+  transform: translateX(-50%);
+}
+
+.gauge-marker-label {
+  position: absolute;
+  font-size: 10px;
+  font-weight: bold;
+  color: #000;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.gauge-avg-label {
+  position: absolute;
+  font-size: 10px;
+  font-weight: bold;
+  color: #003c7f;
+  white-space: nowrap;
+  transform: translateX(-50%);
+}
+
+.gauge-scale {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: #666;
+  margin-bottom: 20px;
+}
+
+.bottom-note {
+  font-size: 11px;
+  color: #444;
+  line-height: 1.6;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #d4d0c8;
 }
 
 
