@@ -108,6 +108,7 @@ def upload():
             save_path = os.path.join(app.config['UPLOAD_DIRECTORY'], safe_name)
             uploaded_file.save(save_path)
             run_data = parse_fit(save_path)
+            os.remove(save_path)
             if run_dlap:
                 if 0 < lap_distance <= run_data[-1]['distance_m']:
                     dlap_info = distance_lap_calculator(run_data, lap_distance)
