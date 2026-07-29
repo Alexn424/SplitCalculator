@@ -23,3 +23,8 @@ python app.py
 
 ## Supported devices
 Garmin Forerunner series (55, 165, 255, 265, 745, 945 and similar). Any device writing enhanced_speed to FIT record messages should work.
+
+![Screenshot](Screenshot%202026-07-28%20222006.png)
+![Screenshot](Screenshot%202026-07-28%20222258.png)
+![Screenshot](Screenshot%202026-07-28%20222321.png)
+![Screenshot](Screenshot%202026-07-28%20222338.png)
