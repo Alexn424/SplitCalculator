@@ -1,4 +1,6 @@
 import math
+import numpy as np
+from scipy.optimize import curve_fit
 from collections import deque
 
 def find_gps_bearing(lat1, long1, lat2, long2):
@@ -25,8 +27,6 @@ def find_angle_diff(heading1, heading2):
         angle_difference += 2 * (math.pi)
 
     return angle_difference
-
-
 
 def state_machine(gps_diff, state, momentum, blend_weight):
     current_state = state
@@ -100,9 +100,61 @@ def state_machine(gps_diff, state, momentum, blend_weight):
     #print('angle_diff', angle_diff)
         
     return current_state, momentum, c_blend_weight
-        
+
+def sine_wave(x, A, period, phase, midline):
+    return A * np.sin(2 * np.pi * x / period + phase) + midline
+
+def estimate_sine_params(run_data, x, y):
+    x_vals = []
+    y_vals = []
+    for h in run_data:
+        if h[y] and h[x]:
+            x_vals.append(h[x])
+            y_vals.append(h[y]) 
+
+    midline = sum(y_vals) / len(y_vals)
+    top_percentile = np.percentile(y_vals, 99.5)
+    bottom_percentile = np.percentile(y_vals, 0.5)
+    amplitude = (top_percentile - bottom_percentile) / 2
+    prev_prev = None
+    prev = None
+    y_peaks = []
+    peak_index = []
+    for a, b in enumerate(y_vals):
+        if prev_prev is None and prev is None:
+            prev_prev = b
+            continue
+        elif prev is None:
+            prev = b
+            continue
+        if prev_prev < prev and b < prev:
+            y_peaks.append(prev)
+            peak_index.append(a)
+        prev_prev = prev
+        prev = b
+    x_peaks = []
+    for i in peak_index:
+        x_peaks.append(x_vals[i])
+
+    peak_differences = []
+    prev_peak = None    
+    for d in x_peaks:
+        if prev_peak is None:
+            prev_peak = d
+            continue
+        peak_differences.append(d - prev_peak)
+        prev_peak = d
+    period = sum(peak_differences) / len(peak_differences)
+    phase = (((2 * np.pi) * x_peaks[0]) / period) - (np.pi / 2)
+
+    x_array = np.array(x_vals)
+    y_array = np.array(y_vals)
+    params, _ = curve_fit(sine_wave, x_array, y_array, p0=[amplitude, period, phase, midline])
+
+    return params
+
 def find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
-                           speed_spikes, record_inconsistency, remainder_penalty):
+                           speed_spikes, record_inconsistency):
     spike_penalty = (distance_spikes + speed_spikes) / 2 
     bearing_penalty = max(0, bearing_anomalies -1 )
     confidence_score = (100 - (bearing_penalty * 5) - min(20, (spike_penalty * 12)) - (timestamp_gaps * 2) 
@@ -110,7 +162,7 @@ def find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
     confidence_score = max(0, confidence_score)
     return confidence_score
 
-def distance_lap_calculator(run_records, lap_distance):
+def distance_lap_calculator(run_records, lap_distance, mode='road'):
     lap_splits = []
     start_time = run_records[0]['timestamp_unix']
     end_time = run_records[-1]['timestamp_unix']
@@ -144,6 +196,14 @@ def distance_lap_calculator(run_records, lap_distance):
     record_inconsistency = 0
     remainder_penalty = 0
 
+    #specific to track mode
+    lat_residuals = []
+    long_residuals = []
+    lat_rsme = 0
+    long_rsme = 0
+
+    lat_params = estimate_sine_params(run_records, 'distance_m', 'position_lat')
+    long_params = estimate_sine_params(run_records, 'distance_m', 'position_long')
 
     for second in run_records:
         
@@ -201,7 +261,6 @@ def distance_lap_calculator(run_records, lap_distance):
                     
                     lap_record_count += 1
 
-
                 if speed is not None and prev_speed is not None:
                     speed_change = speed - prev_speed
                     if (timestamp - start_time) > 3 and (end_time - timestamp) > 3:
@@ -219,62 +278,28 @@ def distance_lap_calculator(run_records, lap_distance):
         if prev_blended is not None and blended_distance < prev_blended:
             blended_distance = prev_blended
 
-        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, speed_spikes, record_inconsistency, 
-                              remainder_penalty)
+        if mode == 'track':
+            lat_predicted = sine_wave(second['distance_m'], *lat_params)
+            lat_residual = lat_predicted - second['position_lat']
+            long_predicted = sine_wave(second['distance_m'], *long_params)
+            long_residual = long_predicted - second['position_long']
+            lat_residuals.append(lat_residual)
+            long_residuals.append(long_residual)
+
+        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, speed_spikes, record_inconsistency)
         if any(x != 0 for x in confidence_metrics):
             confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
-                           speed_spikes, record_inconsistency, remainder_penalty)
+                           speed_spikes, record_inconsistency)
             confidence_scores.append(confidence_score)
 
         #main lap logic
         
         if prev_blended is not None:
-            if blended_distance == next_lap:
-                lap_split = second['timestamp_unix'] - last_lap_time
-                lap_splits.append(round(lap_split, 2))
-                lap_distances.append(next_lap)
-                next_lap += lap_distance
-                last_lap_time = second['timestamp_unix']
-                expected_record = int(lap_split / avg_sampling_rate)
-                record_difference = abs(expected_record - lap_record_count)
-                if record_difference > 1:
-                    record_inconsistency += record_difference
-                remainder_difference = abs(blended_distance - derived_distance)
-                if remainder_difference > 25:
-                    remainder_penalty += 9
-                elif remainder_difference > 15:
-                    remainder_penalty += 5
-                elif remainder_penalty > 8:
-                    remainder_penalty += 2
-                if lap_count > 0:
-                    prev_confidence = lap_confidence_scores[lap_count - 1]
-                    carryover_factor = min(0.2, lap_distance / 400 * 0.2)
-                    carryover = max(0, min(10, max(0, 100 - prev_confidence) * carryover_factor))
-                else:
-                    carryover = 0
-                avg_confidence = ((sum(confidence_scores) / len(confidence_scores) if confidence_scores else 100)
-                                      - remainder_penalty * 3)
-                avg_confidence -= carryover
-                avg_confidence = max(0, avg_confidence)
-                lap_confidence_scores.append(round(avg_confidence, 2))
-                score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
-                     'speed_spikes': speed_spikes, 'bearing_anomolies': bearing_anomalies,
-                     'record_inconsistency': record_inconsistency, 'remainder_penalty': remainder_penalty}
-                #print(score_factors)
-                timestamp_gaps = 0
-                distance_spikes = 0
-                bearing_anomalies = 0
-                speed_spikes = 0
-                confidence_scores = []
-                record_inconsistency = 0
-                lap_record_count = 0
-                remainder_penalty = 0
-                lap_count += 1
-                continue
-
-            elif prev_blended < next_lap < blended_distance:
+        
+            if prev_blended < next_lap <= blended_distance:
 
                 if blended_distance != prev_blended:
+                    #interpolation + recording split time
                     progress = (next_lap - prev_blended) / (blended_distance - prev_blended)
                     prev_time = prev_second['timestamp_unix'] - start_time
                     current_time = second['timestamp_unix'] - start_time
@@ -284,6 +309,7 @@ def distance_lap_calculator(run_records, lap_distance):
                     last_lap_time = lap_time
                     lap_distances.append(next_lap)
                     next_lap += lap_distance
+                    #remainder penalty calculating
                     expected_record = int(lap_split / avg_sampling_rate)
                     record_difference = abs(expected_record - lap_record_count)
                     if record_difference > 1:
@@ -295,6 +321,16 @@ def distance_lap_calculator(run_records, lap_distance):
                         remainder_penalty += 5
                     elif remainder_penalty > 8:
                         remainder_penalty += 2
+                    #calculating rsme
+                    if len(lat_residuals) > 0:
+                        lat_rsme = np.sqrt(np.mean(np.array(lat_residuals)**2))
+                    else:
+                        lat_rsme = 0
+                    if len(long_residuals) > 0:
+                        long_rsme = np.sqrt(np.mean(np.array(long_residuals)**2))
+                    else:
+                        long_rsme = 0
+                    #calculating and storing confidence scores
                     if lap_count > 0:
                         prev_confidence = lap_confidence_scores[lap_count - 1]
                         carryover_factor = min(0.2, lap_distance / 400 * 0.2)
@@ -308,7 +344,10 @@ def distance_lap_calculator(run_records, lap_distance):
                     score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
                      'speed_spikes': speed_spikes,
                        'bearing_anomolies': bearing_anomalies,'record_inconsistency': record_inconsistency,
-                       'remainder_penalty': remainder_penalty}
+                       'remainder_penalty': remainder_penalty, 'lat_rsme': lat_rsme, 'long_rsme': long_rsme}
+                    print(f'lap {lap_count}')
+                    print(f'score factors: {score_factors}')
+                    print(f'lap confidence {avg_confidence}')
                     print(f'gps distance {second['distance_m']}')
                     print(f'Derived Distance {derived_distance}')
                     print(f'blended distance: {blended_distance}')
@@ -322,6 +361,10 @@ def distance_lap_calculator(run_records, lap_distance):
                     lap_record_count = 0
                     remainder_penalty = 0
                     lap_count += 1
+                    lat_residuals = []
+                    long_residuals = []
+                    lat_rsme = 0
+                    long_rsme = 0
                     continue
 
         prev_second = second
@@ -478,62 +521,17 @@ def time_lap_calculator(run_records, lap_time):
             blended_distance = prev_blended
 
         confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, speed_spikes, record_inconsistency, 
-                                remainder_penalty)
+                                )
         if any(x != 0 for x in confidence_metrics):
             confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
-                            speed_spikes, record_inconsistency, remainder_penalty)
+                            speed_spikes, record_inconsistency)
             confidence_scores.append(confidence_score)
             
         if prev_second is not None:
             current_time = second['timestamp_unix'] - start_time
             prev_time = prev_second['timestamp_unix'] - start_time
 
-            if current_time == next_lap:
-                lap_distance = blended_distance - prev_lap
-                absolute_lap_distance = blended_distance
-                lap_distances.append(round(lap_distance, 2))
-                lap_times.append(round(next_lap, 2))
-                next_lap += lap_time
-                last_lap_time = current_time
-                prev_lap = absolute_lap_distance
-                expected_record = int(lap_time / avg_sampling_rate)
-                record_difference = abs(expected_record - lap_record_count)
-                if record_difference > 1:
-                    record_inconsistency += record_difference
-                remainder_difference = abs(blended_distance - derived_distance)
-                if remainder_difference > 25:
-                    remainder_penalty += 9
-                elif remainder_difference > 15:
-                    remainder_penalty += 5
-                elif remainder_penalty > 8:
-                    remainder_penalty += 2
-                if lap_count > 0:
-                    prev_confidence = lap_confidence_scores[lap_count - 1]
-                    carryover_factor = min(0.2, lap_distance / 400 * 0.2)
-                    carryover = max(0, min(10, max(0, 100 - prev_confidence) * carryover_factor))
-                else:
-                    carryover = 0
-                avg_confidence = ((sum(confidence_scores) / len(confidence_scores) if confidence_scores else 100)
-                                        - remainder_penalty * 3)
-                avg_confidence -= carryover
-                avg_confidence = max(0, avg_confidence)
-                lap_confidence_scores.append(round(avg_confidence, 2))
-                score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
-                        'speed_spikes': speed_spikes, 'bearing_anomolies': bearing_anomalies,
-                        'record_inconsistency': record_inconsistency, 'remainder_penalty': remainder_penalty}
-                #print(score_factors)
-                timestamp_gaps = 0
-                distance_spikes = 0
-                bearing_anomalies = 0
-                speed_spikes = 0
-                confidence_scores = []
-                record_inconsistency = 0
-                lap_record_count = 0
-                remainder_penalty = 0
-                lap_count += 1
-                continue    
-                
-            elif prev_time < next_lap < current_time:
+            if prev_time < next_lap <= current_time:
                 progress = (next_lap - prev_time) / (current_time - prev_time)
                 absolute_lap_distance = prev_blended + progress * (blended_distance - prev_blended)
                 lap_distance = absolute_lap_distance - prev_lap
