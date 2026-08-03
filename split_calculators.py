@@ -2,6 +2,7 @@ import math
 import numpy as np
 from scipy.optimize import curve_fit
 from collections import deque
+import matplotlib.pyplot as plt
 
 def find_gps_bearing(lat1, long1, lat2, long2):
     conversion = math.pi / 2**31
@@ -102,7 +103,75 @@ def state_machine(gps_diff, state, momentum, blend_weight):
     return current_state, momentum, c_blend_weight
 
 def sine_wave(x, A, period, phase, midline):
+    #proof of concept for now but might use fourier series later for improved accuracy
     return A * np.sin(2 * np.pi * x / period + phase) + midline
+
+def normalize_data(run_data, x, y, lap_distance):
+    x_vals = []
+    y_vals = []
+    x_temp = []
+    y_temp = []
+
+    lap_count = 0
+    lap_boundary = lap_distance
+
+    for h in run_data:
+        if h[y] and h[x] and h[x] < lap_boundary:
+            x_point = h[x] - (lap_distance * lap_count)
+            x_temp.append(x_point)
+            y_temp.append(h[y])
+        else:
+            x_vals.append(np.array(x_temp))
+            y_vals.append(np.array(y_temp))
+            x_temp = [h[x] - lap_distance]
+            y_temp = [h[y]]
+            lap_boundary += lap_distance
+            lap_count += 1
+
+    x_all = np.concatenate(x_vals)
+    y_all = np.concatenate(y_vals)
+
+    sort_order = np.argsort(x_all)
+    x_all = x_all[sort_order]
+    y_all = y_all[sort_order]
+
+    standard_rate = np.mean(np.diff(x_all))
+    x_normalized = np.arange(0, lap_distance, standard_rate)
+
+    y_interp = np.interp(x_normalized, x_all, y_all)
+
+    return x_normalized, y_interp
+
+def estimate_fourier_params(run_data, x, y, lap_distance, harmony_num):
+    x_normalized, y_interp = normalize_data(run_data, x, y, lap_distance)
+
+    design_matrix = []
+
+    for i in range(1, harmony_num + 1):
+        sin_basis = np.sin(i * x_normalized * 2 * np.pi / lap_distance)
+        cos_basis = np.cos(i * x_normalized * 2 * np.pi / lap_distance)
+        design_matrix.append(sin_basis)
+        design_matrix.append(cos_basis)
+
+    design_matrix = np.column_stack(design_matrix)
+    bias = np.ones((x_normalized.shape[0], 1))
+    design_with_bias = np.hstack([design_matrix, bias])
+
+    weights, _, _, _ = np.linalg.lstsq(design_with_bias, y_interp)
+
+    return weights
+
+def fourier_wave(x, lap_distance, weights):
+    harmony_num = int((len(weights) - 1) / 2)
+    parts = []
+    for h in range(1, harmony_num + 1):
+        parts.append(np.sin(h * x * 2 * np.pi / lap_distance ) * weights[2 * (h - 1)])
+        parts.append(np.cos(h * x * 2 * np.pi / lap_distance) * weights[2 * (h - 1) + 1])
+
+    output = np.sum(parts, axis=0) + weights[-1]
+
+    return output
+
 
 def estimate_sine_params(run_data, x, y):
     x_vals = []
@@ -153,11 +222,11 @@ def estimate_sine_params(run_data, x, y):
 
     return params
 
+
 def find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
-                           speed_spikes, record_inconsistency):
-    spike_penalty = (distance_spikes + speed_spikes) / 2 
+                            record_inconsistency, lat_rsme, long_rsme):
     bearing_penalty = max(0, bearing_anomalies -1 )
-    confidence_score = (100 - (bearing_penalty * 5) - min(20, (spike_penalty * 12)) - (timestamp_gaps * 2) 
+    confidence_score = (100 - (bearing_penalty * 5) - min(20, (distance_spikes * 12)) - (timestamp_gaps * 2) 
                         - (record_inconsistency * 15))
     confidence_score = max(0, confidence_score)
     return confidence_score
@@ -189,9 +258,6 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
     distance_avg = 0
     bearing_anomaly_threshold = 0.55
     bearing_anomalies = 0
-    speed_spikes = 0
-    rolling_speed = deque(maxlen=int(round(max(5, lap_distance * 0.02))))
-    speed_avg = 0
     lap_record_count = 0
     record_inconsistency = 0
     remainder_penalty = 0
@@ -202,8 +268,27 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
     lat_rsme = 0
     long_rsme = 0
 
-    lat_params = estimate_sine_params(run_records, 'distance_m', 'position_lat')
-    long_params = estimate_sine_params(run_records, 'distance_m', 'position_long')
+    lat_weights = estimate_fourier_params(run_records, 'distance_m', 'position_lat', 400, 5)
+    long_weights = estimate_fourier_params(run_records, 'distance_m', 'position_long', 400, 5)
+
+    x_vals = []
+    y_vals = []
+
+    for h in run_records:
+        if h['distance_m'] and h['position_long']:
+            x_vals.append(h['distance_m'])
+            y_vals.append(h['position_long']) 
+
+    x_array = np.array(x_vals)
+    y_array = np.array(y_vals)
+
+    lat_predicted = fourier_wave(x_array, 400, lat_weights)
+    long_predicted = fourier_wave(x_array, 400, long_weights)
+
+    plt.plot(x_vals, long_predicted, color='tab:blue')
+    plt.plot(x_vals, y_array, color='tab:red')
+    plt.show()
+
 
     for second in run_records:
         
@@ -229,8 +314,7 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
 
             timestamp = second['timestamp_unix']
             prev_timestamp = prev_second['timestamp_unix']
-            speed = second['speed_mps']
-            prev_speed = prev_second['speed_mps']
+
             #confidence score code
 
             #print('gps distance', second['distance_m'])
@@ -261,35 +345,21 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
                     
                     lap_record_count += 1
 
-                if speed is not None and prev_speed is not None:
-                    speed_change = speed - prev_speed
-                    if (timestamp - start_time) > 3 and (end_time - timestamp) > 3:
-                        if len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 18:
-                            speed_change = speed_avg
-                            speed_spikes += 7
-                        elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 10:
-                            speed_change = speed_avg
-                            speed_spikes += 3
-                        elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 5:
-                            speed_spikes += 1
-                    rolling_speed.append(speed_change)
-                    speed_avg = sum(rolling_speed) / len(rolling_speed)
 
         if prev_blended is not None and blended_distance < prev_blended:
             blended_distance = prev_blended
 
         if mode == 'track':
-            lat_predicted = sine_wave(second['distance_m'], *lat_params)
+            lat_predicted = fourier_wave(second['distance_m'], 400, lat_weights)
             lat_residual = lat_predicted - second['position_lat']
-            long_predicted = sine_wave(second['distance_m'], *long_params)
+            long_predicted = fourier_wave(second['distance_m'], 400, long_weights)
             long_residual = long_predicted - second['position_long']
             lat_residuals.append(lat_residual)
             long_residuals.append(long_residual)
 
-        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, speed_spikes, record_inconsistency)
+        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency)
         if any(x != 0 for x in confidence_metrics):
-            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
-                           speed_spikes, record_inconsistency)
+            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency)
             confidence_scores.append(confidence_score)
 
         #main lap logic
@@ -342,7 +412,6 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
                     avg_confidence -= carryover
                     lap_confidence_scores.append(round(avg_confidence, 2))
                     score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
-                     'speed_spikes': speed_spikes,
                        'bearing_anomolies': bearing_anomalies,'record_inconsistency': record_inconsistency,
                        'remainder_penalty': remainder_penalty, 'lat_rsme': lat_rsme, 'long_rsme': long_rsme}
                     print(f'lap {lap_count}')
@@ -355,7 +424,6 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
                     timestamp_gaps = 0
                     distance_spikes = 0
                     bearing_anomalies = 0
-                    speed_spikes = 0
                     confidence_scores = []
                     record_inconsistency = 0
                     lap_record_count = 0
@@ -430,9 +498,6 @@ def time_lap_calculator(run_records, lap_time):
     distance_avg = 0
     bearing_anomaly_threshold = 0.55
     bearing_anomalies = 0
-    speed_spikes = 0
-    rolling_speed = deque(maxlen=int(round(max(5, lap_time * 0.02))))
-    speed_avg = 0
     lap_record_count = 0
     record_inconsistency = 0
     remainder_penalty = 0
@@ -503,28 +568,13 @@ def time_lap_calculator(run_records, lap_time):
                 
                 lap_record_count += 1
 
-            if speed is not None and prev_speed is not None:
-                speed_change = speed - prev_speed
-                if (timestamp - start_time) > 3 and (end_time - timestamp) > 3:
-                    if len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 18:
-                        speed_change = speed_avg
-                        speed_spikes += 7
-                    elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 10:
-                        speed_change = speed_avg
-                        speed_spikes += 3
-                    elif len(rolling_speed) > 2 and abs(speed_change - speed_avg) > 5:
-                        speed_spikes += 1
-                rolling_speed.append(speed_change)
-                speed_avg = sum(rolling_speed) / len(rolling_speed)
-
         if prev_blended is not None and blended_distance < prev_blended:
             blended_distance = prev_blended
 
-        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, speed_spikes, record_inconsistency, 
+        confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency, 
                                 )
         if any(x != 0 for x in confidence_metrics):
-            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
-                            speed_spikes, record_inconsistency)
+            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency)
             confidence_scores.append(confidence_score)
             
         if prev_second is not None:
@@ -562,7 +612,6 @@ def time_lap_calculator(run_records, lap_time):
                 avg_confidence -= carryover
                 lap_confidence_scores.append(round(avg_confidence, 2))
                 score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
-                    'speed_spikes': speed_spikes,
                     'bearing_anomolies': bearing_anomalies,'record_inconsistency': record_inconsistency,
                     'remainder_penalty': remainder_penalty}
                 print(f'gps distance {second['distance_m']}')
@@ -572,7 +621,6 @@ def time_lap_calculator(run_records, lap_time):
                 timestamp_gaps = 0
                 distance_spikes = 0
                 bearing_anomalies = 0
-                speed_spikes = 0
                 confidence_scores = []
                 record_inconsistency = 0
                 lap_record_count = 0
