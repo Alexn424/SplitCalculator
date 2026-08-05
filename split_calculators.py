@@ -2,7 +2,6 @@ import math
 import numpy as np
 from scipy.optimize import curve_fit
 from collections import deque
-import matplotlib.pyplot as plt
 
 def find_gps_bearing(lat1, long1, lat2, long2):
     conversion = math.pi / 2**31
@@ -217,23 +216,6 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
     lat_weights = estimate_fourier_params(run_records, 'distance_m', 'position_lat', 400, 7)
     long_weights = estimate_fourier_params(run_records, 'distance_m', 'position_long', 400, 7)
 
-    #x_vals = []
-    #y_vals = []
-
-    #for h in run_records:
-        #if h['distance_m'] and h['position_long']:
-            #x_vals.append(h['distance_m'])
-            #y_vals.append(h['position_long']) 
-
-    #x_array = np.array(x_vals)
-    #y_array = np.array(y_vals)
-
-    #lat_predicted = fourier_wave(x_array, 400, lat_weights)
-    #long_predicted = fourier_wave(x_array, 400, long_weights)
-
-    #plt.plot(x_vals, long_predicted, color='tab:blue')
-    #plt.plot(x_vals, y_array, color='tab:red')
-    #plt.show()
 
 
     for second in run_records:
@@ -601,7 +583,7 @@ def time_lap_calculator(run_records, lap_time, mode='road'):
                 lat_rsme = 0
                 long_rsme = 0
                 continue
-            
+
         prev_second = second
         prev_blended = blended_distance
 
