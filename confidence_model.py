@@ -17,6 +17,7 @@ def confidence_score_regression_model(validation_data):
     ss_total = np.sum((y_array - np.mean(y_array))**2)
     r_squared = 1 - (ss_residuals / ss_total )
     print(weights)
+    print(r_squared)
 confidence_score_regression_model(validation_data)
 #print(validation_data.columns.tolist())
 #print(validation_data.shape)

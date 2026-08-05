@@ -68,6 +68,7 @@ def upload():
     try:
         lap_distance = request.form.get('lap_distance')
         lap_time = request.form.get('lap_time')
+        mode = request.form.get('mode')
 
         run_dlap = lap_distance not in (None, '')
         run_tlap = lap_time not in (None, '')
@@ -94,7 +95,7 @@ def upload():
             'avg_confidence': None
         }
                 
-        mode = 'track'
+        
 
         uploaded_file = request.files.get('file') 
         if uploaded_file is None or uploaded_file.filename == '' :

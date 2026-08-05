@@ -7,6 +7,16 @@
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}">
     <title>Split Calculator</title>
 </head>
+<!-- Google tag (gtag.js) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-VNQ97H9JCL"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  gtag('config', 'G-VNQ97H9JCL');
+</script>
+
 <body>
   <div class="app">
 
@@ -38,6 +48,13 @@
             <div class="form-row">
               <label for="lap_time">Lap Time (sec):</label>
               <input type="number" name="lap_time" id="lap_time" min="1" step="any"/>
+            </div>
+            <div class="mode-select">
+              <label for="mode">Mode:</label>
+              <select name="mode" id="mode">
+                <option value="road">Road</option>
+                <option value="track">Track</option>
+              </select>
             </div>
             <button type="submit">✔ Calculate Splits</button>
           </div>
@@ -181,7 +198,7 @@
       <script>
         (function() {
           const scores = {{ tlap_info.lap_confidence_scores | tojson }};
-          const avg = {{ tlap_info.avg_confidence or 0}};
+          const avg = {{ tlap_info.avg_confidence or 0 }};
           const THRESHOLD = 2;
           const wrap = document.getElementById('tlap-gauge-wrap');
 

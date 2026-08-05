@@ -102,9 +102,6 @@ def state_machine(gps_diff, state, momentum, blend_weight):
         
     return current_state, momentum, c_blend_weight
 
-def sine_wave(x, A, period, phase, midline):
-    #proof of concept for now but might use fourier series later for improved accuracy
-    return A * np.sin(2 * np.pi * x / period + phase) + midline
 
 def normalize_data(run_data, x, y, lap_distance):
     x_vals = []
@@ -168,66 +165,15 @@ def fourier_wave(x, lap_distance, weights):
         parts.append(np.sin(h * x * 2 * np.pi / lap_distance ) * weights[2 * (h - 1)])
         parts.append(np.cos(h * x * 2 * np.pi / lap_distance) * weights[2 * (h - 1) + 1])
 
-    output = np.sum(parts, axis=0) + weights[-1]
+    output = np.sum(parts) + weights[-1]
 
     return output
-
-
-def estimate_sine_params(run_data, x, y):
-    x_vals = []
-    y_vals = []
-    for h in run_data:
-        if h[y] and h[x]:
-            x_vals.append(h[x])
-            y_vals.append(h[y]) 
-
-    midline = sum(y_vals) / len(y_vals)
-    top_percentile = np.percentile(y_vals, 99.5)
-    bottom_percentile = np.percentile(y_vals, 0.5)
-    amplitude = (top_percentile - bottom_percentile) / 2
-    prev_prev = None
-    prev = None
-    y_peaks = []
-    peak_index = []
-    for a, b in enumerate(y_vals):
-        if prev_prev is None and prev is None:
-            prev_prev = b
-            continue
-        elif prev is None:
-            prev = b
-            continue
-        if prev_prev < prev and b < prev:
-            y_peaks.append(prev)
-            peak_index.append(a)
-        prev_prev = prev
-        prev = b
-    x_peaks = []
-    for i in peak_index:
-        x_peaks.append(x_vals[i])
-
-    peak_differences = []
-    prev_peak = None    
-    for d in x_peaks:
-        if prev_peak is None:
-            prev_peak = d
-            continue
-        peak_differences.append(d - prev_peak)
-        prev_peak = d
-    period = sum(peak_differences) / len(peak_differences)
-    phase = (((2 * np.pi) * x_peaks[0]) / period) - (np.pi / 2)
-
-    x_array = np.array(x_vals)
-    y_array = np.array(y_vals)
-    params, _ = curve_fit(sine_wave, x_array, y_array, p0=[amplitude, period, phase, midline])
-
-    return params
-
 
 def find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies,
                             record_inconsistency, lat_rsme, long_rsme):
     bearing_penalty = max(0, bearing_anomalies -1 )
-    confidence_score = (100 - (bearing_penalty * 5) - min(20, (distance_spikes * 12)) - (timestamp_gaps * 2) 
-                        - (record_inconsistency * 15))
+    confidence_score = (100 - (bearing_penalty * 3) - min(20, (distance_spikes * 5)) - (timestamp_gaps * 2) 
+                        - (record_inconsistency * 10) - (lat_rsme * 0.03) - (long_rsme * 0.03))
     confidence_score = max(0, confidence_score)
     return confidence_score
 
@@ -268,26 +214,26 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
     lat_rsme = 0
     long_rsme = 0
 
-    lat_weights = estimate_fourier_params(run_records, 'distance_m', 'position_lat', 400, 5)
-    long_weights = estimate_fourier_params(run_records, 'distance_m', 'position_long', 400, 5)
+    lat_weights = estimate_fourier_params(run_records, 'distance_m', 'position_lat', 400, 7)
+    long_weights = estimate_fourier_params(run_records, 'distance_m', 'position_long', 400, 7)
 
-    x_vals = []
-    y_vals = []
+    #x_vals = []
+    #y_vals = []
 
-    for h in run_records:
-        if h['distance_m'] and h['position_long']:
-            x_vals.append(h['distance_m'])
-            y_vals.append(h['position_long']) 
+    #for h in run_records:
+        #if h['distance_m'] and h['position_long']:
+            #x_vals.append(h['distance_m'])
+            #y_vals.append(h['position_long']) 
 
-    x_array = np.array(x_vals)
-    y_array = np.array(y_vals)
+    #x_array = np.array(x_vals)
+    #y_array = np.array(y_vals)
 
-    lat_predicted = fourier_wave(x_array, 400, lat_weights)
-    long_predicted = fourier_wave(x_array, 400, long_weights)
+    #lat_predicted = fourier_wave(x_array, 400, lat_weights)
+    #long_predicted = fourier_wave(x_array, 400, long_weights)
 
-    plt.plot(x_vals, long_predicted, color='tab:blue')
-    plt.plot(x_vals, y_array, color='tab:red')
-    plt.show()
+    #plt.plot(x_vals, long_predicted, color='tab:blue')
+    #plt.plot(x_vals, y_array, color='tab:red')
+    #plt.show()
 
 
     for second in run_records:
@@ -359,7 +305,8 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
 
         confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency)
         if any(x != 0 for x in confidence_metrics):
-            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency)
+            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies, 
+                                                     record_inconsistency, lat_rsme, long_rsme)
             confidence_scores.append(confidence_score)
 
         #main lap logic
@@ -468,7 +415,7 @@ def distance_lap_calculator(run_records, lap_distance, mode='road'):
     return dlap_info
 
 
-def time_lap_calculator(run_records, lap_time):
+def time_lap_calculator(run_records, lap_time, mode='road'):
     start_time = run_records[0]['timestamp_unix']
     end_time = run_records[-1]['timestamp_unix']
     lap_distances = []
@@ -504,6 +451,15 @@ def time_lap_calculator(run_records, lap_time):
     lap_count = 0
     avg_confidence = 100
 
+    #specific to track mode
+    lat_residuals = []
+    long_residuals = []
+    lat_rsme = 0
+    long_rsme = 0
+
+    lat_weights = estimate_fourier_params(run_records, 'distance_m', 'position_lat', 400, 7)
+    long_weights = estimate_fourier_params(run_records, 'distance_m', 'position_long', 400, 7)
+
     for second in run_records:
         avg_sampling_rate = (end_time - start_time) / len(run_records)
         distance = second['distance_m']
@@ -519,8 +475,6 @@ def time_lap_calculator(run_records, lap_time):
 
         timestamp = second['timestamp_unix']
         prev_timestamp = prev_second['timestamp_unix'] if prev_second is not None else None
-        speed = second['speed_mps']
-        prev_speed = prev_second['speed_mps'] if prev_second is not None else None
         
         if prev_second is not None and prev_second['position_lat'] is not None and prev_second['position_long'] is not None:
 
@@ -571,6 +525,14 @@ def time_lap_calculator(run_records, lap_time):
         if prev_blended is not None and blended_distance < prev_blended:
             blended_distance = prev_blended
 
+        if mode == 'track':
+            lat_predicted = fourier_wave(second['distance_m'], 400, lat_weights)
+            lat_residual = lat_predicted - second['position_lat']
+            long_predicted = fourier_wave(second['distance_m'], 400, long_weights)
+            long_residual = long_predicted - second['position_long']
+            lat_residuals.append(lat_residual)
+            long_residuals.append(long_residual)
+
         confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency, 
                                 )
         if any(x != 0 for x in confidence_metrics):
@@ -589,7 +551,15 @@ def time_lap_calculator(run_records, lap_time):
                 lap_times.append(round(next_lap, 2))
                 next_lap += lap_time
                 last_lap_time = current_time
-                prev_lap = absolute_lap_distance 
+                prev_lap = absolute_lap_distance
+                if len(lat_residuals) > 0:
+                    lat_rsme = np.sqrt(np.mean(np.array(lat_residuals)**2))
+                else:
+                    lat_rsme = 0
+                if len(long_residuals) > 0:
+                    long_rsme = np.sqrt(np.mean(np.array(long_residuals)**2))
+                else:
+                    long_rsme = 0 
                 expected_record = int(lap_time / avg_sampling_rate)
                 record_difference = abs(expected_record - lap_record_count)
                 if record_difference > 1:
@@ -613,7 +583,7 @@ def time_lap_calculator(run_records, lap_time):
                 lap_confidence_scores.append(round(avg_confidence, 2))
                 score_factors = {'tmestamp_gaps': timestamp_gaps, 'distance_spikes': distance_spikes,
                     'bearing_anomolies': bearing_anomalies,'record_inconsistency': record_inconsistency,
-                    'remainder_penalty': remainder_penalty}
+                    'remainder_penalty': remainder_penalty, 'lat_rsme': lat_rsme, 'long_rsme': long_rsme}
                 print(f'gps distance {second['distance_m']}')
                 print(f'Derived Distance {derived_distance}')
                 print(f'blended distance: {blended_distance}')
@@ -626,7 +596,12 @@ def time_lap_calculator(run_records, lap_time):
                 lap_record_count = 0
                 remainder_penalty = 0
                 lap_count += 1
+                lat_residuals = []
+                long_residuals = []
+                lat_rsme = 0
+                long_rsme = 0
                 continue
+            
         prev_second = second
         prev_blended = blended_distance
 

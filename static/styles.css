@@ -390,3 +390,29 @@ h2 {
   color: #000;
   margin-top: 2px;
 }
+
+.mode-select {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.mode-select label {
+  font-size: 11px;
+  color: #000;
+  white-space: nowrap;
+}
+
+.mode-select select {
+  border: 2px inset #808080;
+  background: #fff;
+  padding: 2px 4px;
+  font-size: 12px;
+  font-family: Verdana, Arial, sans-serif;
+}
+
+select:focus,
+input:focus {
+  outline: none;
+}
