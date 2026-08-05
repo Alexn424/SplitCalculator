@@ -518,7 +518,8 @@ def time_lap_calculator(run_records, lap_time, mode='road'):
         confidence_metrics = (timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency, 
                                 )
         if any(x != 0 for x in confidence_metrics):
-            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency)
+            confidence_score = find_confidence_score(timestamp_gaps, distance_spikes, bearing_anomalies, record_inconsistency,
+                                                     lat_rsme, long_rsme)
             confidence_scores.append(confidence_score)
             
         if prev_second is not None:
